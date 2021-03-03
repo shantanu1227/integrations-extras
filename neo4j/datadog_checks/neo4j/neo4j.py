@@ -86,7 +86,7 @@ class Neo4jCheck(AgentCheck):
     }
 
     def check(self, instance):
-        host, port, user, password, timeout, server_name = self._get_config(instance)
+        host, port, user, password, timeout, server_name, neo4j_version = self._get_config(instance)
         tags = instance.get('tags', [])
         tags.append('server_name:{}'.format(server_name))
         service_check_tags = tags + ['url:{}'.format(host)]
@@ -104,9 +104,11 @@ class Neo4jCheck(AgentCheck):
             ]
         }
         try:
-            version = self._get_version(host, port, timeout, auth, service_check_tags)
+            version = self._get_version(host, port, timeout, auth, service_check_tags, neo4j_version)
 
-            if version > 2:
+            if version > 4:
+                check_url = "{}:{}/db/neo4j/tx/commit".format(host, port)
+            elif version > 2:
                 check_url = "{}:{}/db/data/transaction/commit".format(host, port)
             else:
                 check_url = "{}:{}/v1/service/metrics".format(host, port)
@@ -142,15 +144,20 @@ class Neo4jCheck(AgentCheck):
         password = str(instance.get('password', ''))
         connect_timeout = instance.get('connect_timeout')
         server_name = instance.get('server_name', '')
+        neo4j_version = instance.get('neo4j_version', '')
 
         timeout = None
         if connect_timeout:
             timeout = Timeout(connect=connect_timeout)
 
-        return host, port, user, password, timeout, server_name
+        return host, port, user, password, timeout, server_name, neo4j_version
 
-    def _get_version(self, host, port, timeout, auth, service_check_tags):
+    def _get_version(self, host, port, timeout, auth, service_check_tags, neo4j_version):
         version_url = '{}:{}/db/data/'.format(host, port)
+        if neo4j_version:
+            neo4j_version = neo4j_version.split('.')
+            if int(neo4j_version[0]) >= 4:
+                version_url = '{}:{}'.format(host, port)
         headers_sent = {'Content-Type': 'application/json'}
         r = requests.get(version_url, auth=auth, headers=headers_sent, timeout=timeout)
         if r.status_code != 200:
